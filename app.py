@@ -6,9 +6,9 @@ from PIL import Image
 
 # --- CONFIGURATION DE L'IA (VERSION FORCÉE) ---
 if "GEMINI_API_KEY" in st.secrets:
-    API_KEY = st.secrets["AIzaSyBWSlYPySBaUiQ9h6quYFXbEiDLBJwiuBQ"]
+    API_KEY = st.secrets["GEMINI_API_KEY"] # Laissez le texte "GEMINI_API_KEY" écrit tel quel !
 else:
-    API_KEY = "VOTRE_CLE_API_ICI"
+    API_KEY = "CLÉ_NON_TROUVÉE"
 
 genai.configure(api_key=API_KEY)
 
