@@ -52,11 +52,9 @@ else:
     API_KEY = None
     st.sidebar.error("Aucune clé API configurée")
 
-# Initialisation des modèles si une clé est présente
 if API_KEY:
     try:
         genai.configure(api_key=API_KEY)
-        # Modèles de dernière génération
         model_vision = genai.GenerativeModel('gemini-2.5-flash')
         model_research = genai.GenerativeModel('gemini-2.5-pro')
     except Exception as e:
@@ -85,17 +83,15 @@ def analyser_marche_local(ville, cp):
     FINIS PAR CES BALISES : [PRIX_M2: XXX] [LOYER_M2: YYY]
     """
     try:
-        # Tentative avec recherche Google (Model Pro)
         response = model_research.generate_content(prompt, tools=[{'google_search_retrieval': {}}])
         return response.text
-    except Exception as e:
-        # Plan B : On bascule sur Flash sans recherche web (Anti-Quota)
+    except Exception:
         try:
             st.warning("⏱️ Mode éco : Analyse basée sur l'historique de l'IA.")
             response = model_vision.generate_content(prompt)
             return response.text
         except:
-            return f"Service indisponible.\n[PRIX_M2: 2000]\n[LOYER_M2: 12]"
+            return "Service indisponible.\n[PRIX_M2: 2000]\n[LOYER_M2: 12]"
 
 def calculer_mensualite(capital, taux, annees):
     if capital <= 0 or annees <= 0: return 0.0
@@ -109,11 +105,6 @@ def calculer_mensualite(capital, taux, annees):
 # ==========================================
 mode = st.sidebar.radio("Stratégie d'investissement :", ["Investissement Locatif", "Marchand de Biens"])
 st.sidebar.markdown("---")
-with st.sidebar.expander("Diagnostic Technique"):
-    try:
-        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        st.write(models)
-    except: st.write("Impossible de lister les modèles")
 
 st.header(f"Projet : {mode}")
 
@@ -142,6 +133,7 @@ if query:
                 if l_m2: st.session_state.ai_loyer_m2 = int(l_m2.group(1))
                 st.markdown("### Rapport IA")
                 st.write(re.sub(r'\[.*?\]', '', rapport))
+                st.rerun() # On force le rafraîchissement pour mettre à jour les calculs en bas
 
 st.markdown("---")
 
@@ -159,6 +151,7 @@ if up:
             b_m2 = re.search(r'\[BUDGET_M2:\s*(\d+)\]', audit)
             if b_m2: st.session_state.ai_budget_m2 = int(b_m2.group(1))
             col_t.write(re.sub(r'\[.*?\]', '', audit))
+            st.rerun()
 
 st.markdown("---")
 
@@ -167,28 +160,38 @@ st.subheader("💰 Simulation Financière")
 col_a, col_b = st.columns(2)
 
 with col_a:
-    surface = st.number_input("Surface (m²)", value=50)
+    surface = st.number_input("Surface (m²)", value=50, key="surf_input")
     prix_bien = st.number_input("Prix net vendeur (€)", value=100000)
     
     if mode == "Investissement Locatif":
-        loyer_ia = st.session_state.ai_loyer_m2 * surface
-        val_l = float(loyer_ia) if st.checkbox("Appliquer Loyer IA", value=(loyer_ia > 0)) else 500.0
-        loyer_f = st.number_input("Loyer mensuel HC (€)", value=val_l)
+        # Logique Loyer
+        loyer_ia_total = float(st.session_state.ai_loyer_m2 * surface)
+        use_loyer_ia = st.checkbox("Appliquer Loyer IA", value=(loyer_ia_total > 0), key="check_loyer")
+        
+        default_loyer = loyer_ia_total if use_loyer_ia else 500.0
+        loyer_f = st.number_input("Loyer mensuel HC (€)", value=default_loyer, step=10.0)
     else:
-        rev_ia = st.session_state.ai_prix_m2 * surface
-        val_r = float(rev_ia) if st.checkbox("Appliquer Revente IA", value=(rev_ia > 0)) else 150000.0
-        rev_f = st.number_input("Prix de revente (€)", value=val_r)
+        # Logique Revente (Marchand)
+        rev_ia_total = float(st.session_state.ai_prix_m2 * surface)
+        use_rev_ia = st.checkbox("Appliquer Revente IA", value=(rev_ia_total > 0), key="check_rev")
+        
+        default_rev = rev_ia_total if use_rev_ia else 150000.0
+        rev_f = st.number_input("Prix de revente (€)", value=default_rev, step=1000.0)
 
 with col_b:
-    trav_ia = st.session_state.ai_budget_m2 * surface
-    val_t = float(trav_ia) if st.checkbox("Appliquer Travaux IA", value=(trav_ia > 0)) else 0.0
-    trav_f = st.number_input("Travaux (€)", value=val_t)
+    # Logique Travaux
+    trav_ia_total = float(st.session_state.ai_budget_m2 * surface)
+    use_trav_ia = st.checkbox("Appliquer Travaux IA", value=(trav_ia_total > 0), key="check_trav")
+    
+    default_trav = trav_ia_total if use_trav_ia else 0.0
+    trav_f = st.number_input("Budget Travaux (€)", value=default_trav, step=500.0)
+    
     notaire = st.number_input("Notaire (%)", value=8.5 if mode=="Investissement Locatif" else 2.5)
     apport = st.number_input("Apport (€)", value=10000)
     duree = st.number_input("Durée (ans)", value=20)
     taux = st.number_input("Taux (%)", value=3.5)
 
-# Calculs
+# Calculs globaux
 total_invest = prix_bien + (prix_bien * notaire/100) + trav_f
 mensu = calculer_mensualite(max(0, total_invest - apport), taux, duree)
 
@@ -207,3 +210,9 @@ else:
     res1.metric("Prix de Revient", f"{total_invest:,.0f} €")
     res2.metric("Marge Brute", f"{marge:,.0f} €")
     res3.metric("ROI", f"{roi:.1f} %")
+
+# Diagnostic discret
+with st.expander("Diagnostic Technique"):
+    st.write(f"Mémoire IA - Travaux: {st.session_state.ai_budget_m2}€/m²")
+    st.write(f"Mémoire IA - Prix Marché: {st.session_state.ai_prix_m2}€/m²")
+    st.write(f"Mémoire IA - Loyer Marché: {st.session_state.ai_loyer_m2}€/m²")
