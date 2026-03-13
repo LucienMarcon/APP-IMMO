@@ -1,3 +1,3 @@
 streamlit
 plotly
-google-generativeai
+google-generativeai>=0.7.0
