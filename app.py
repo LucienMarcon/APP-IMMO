@@ -67,9 +67,20 @@ def analyser_marche_local(ville, cp):
     3. Fais une brève analyse de la tension locative.
     FINIS PAR CES BALISES : [PRIX_M2: XXX] [LOYER_M2: YYY]
     """
-    # Utilisation de la recherche Google intégrée pour des données fraîches
-    response = model_research.generate_content(prompt, tools=[{'google_search_retrieval': {}}])
-    return response.text
+    try:
+        # Tentative A : Avec la recherche internet en temps réel
+        response = model_research.generate_content(prompt, tools=[{'google_search_retrieval': {}}])
+        return response.text
+    except Exception as e:
+        # Si erreur (comme ResourceExhausted), on passe au Plan B
+        if "ResourceExhausted" in str(e) or "429" in str(e):
+            st.warning("⏱️ Quota de recherche web atteint. L'IA utilise son historique de données.")
+            # Tentative B : On enlève l'outil de recherche web (tools=...)
+            response_fallback = model_research.generate_content(prompt)
+            return response_fallback.text
+        else:
+            # Si c'est une autre erreur, on l'affiche
+            return f"Erreur technique : {e}"
 
 def calculer_mensualite(capital, taux, annees):
     if capital <= 0 or annees <= 0: return 0.0
