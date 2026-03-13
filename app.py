@@ -83,9 +83,18 @@ else:
 # ==========================================
 
 def extraire_nombre(texte, balise):
-    pattern = rf"\[{balise}:\s*(\d+)\]"
-    match = re.search(pattern, texte)
-    return int(match.group(1)) if match else 0
+    """Extrait un nombre même si l'IA ajoute des décimales, des espaces ou le symbole €"""
+    try:
+        # Cherche la balise et capture tout ce qui ressemble à un nombre juste après
+        pattern = rf"\[{balise}:\s*([0-9]+(?:[.,][0-9]+)?)"
+        match = re.search(pattern, texte, re.IGNORECASE)
+        if match:
+            # Remplace la virgule par un point pour éviter les bugs de calcul Python
+            valeur = match.group(1).replace(',', '.')
+            return float(valeur)
+    except Exception:
+        pass
+    return 0.0
 
 def extraire_texte(texte, balise):
     pattern = rf"\[{balise}:\s*(.*?)\]"
