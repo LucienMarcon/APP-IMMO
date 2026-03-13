@@ -237,41 +237,39 @@ with c1:
     if mode == "Investissement Locatif":
         loyer_ia_tot = float(st.session_state.ai_loyer_m2 * surface)
         use_loyer_ia = st.checkbox(f"Appliquer Loyer IA ({loyer_ia_tot}€)", value=(loyer_ia_tot > 0))
-        # CORRECTION ICI : Ajout de la clé dynamique
-        loyer_final = st.number_input(
-            "Loyer mensuel HC (€)", 
-            value=loyer_ia_tot if use_loyer_ia else 500.0,
-            key=f"loyer_input_{use_loyer_ia}",
-            disabled=use_loyer_ia
-        )
+        
+        # --- CORRECTION LOYER ---
+        if "input_loyer" not in st.session_state: st.session_state.input_loyer = 500.0
+        if use_loyer_ia: st.session_state.input_loyer = loyer_ia_tot
+            
+        loyer_final = st.number_input("Loyer mensuel HC (€)", key="input_loyer", disabled=use_loyer_ia)
+        
     else:
         revente_ia_tot = float(st.session_state.ai_prix_m2 * surface)
         use_revente_ia = st.checkbox(f"Appliquer Revente IA ({revente_ia_tot}€)", value=(revente_ia_tot > 0))
-        # CORRECTION ICI : Ajout de la clé dynamique
-        revente_final = st.number_input(
-            "Prix de revente estimé (€)", 
-            value=revente_ia_tot if use_revente_ia else 160000.0,
-            key=f"revente_input_{use_revente_ia}",
-            disabled=use_revente_ia
-        )
+        
+        # --- CORRECTION REVENTE ---
+        if "input_revente" not in st.session_state: st.session_state.input_revente = 160000.0
+        if use_revente_ia: st.session_state.input_revente = revente_ia_tot
+            
+        revente_final = st.number_input("Prix de revente estimé (€)", key="input_revente", disabled=use_revente_ia)
 
 with c2:
     st.subheader("Chantier & Prêt")
     trav_ia_tot = float(st.session_state.ai_budget_m2 * surface)
     use_trav_ia = st.checkbox(f"Appliquer Travaux IA ({trav_ia_tot}€)", value=(trav_ia_tot > 0))
     
-    # CORRECTION ICI : Ajout de la clé dynamique pour les travaux
-    trav_final = st.number_input(
-        "Budget travaux total (€)", 
-        value=trav_ia_tot if use_trav_ia else 0.0,
-        key=f"trav_input_{use_trav_ia}",
-        disabled=use_trav_ia
-    )
+    # --- CORRECTION TRAVAUX ---
+    if "input_travaux" not in st.session_state: st.session_state.input_travaux = 0.0
+    if use_trav_ia: st.session_state.input_travaux = trav_ia_tot
+        
+    trav_final = st.number_input("Budget travaux total (€)", key="input_travaux", disabled=use_trav_ia)
     
     apport = st.number_input("Apport personnel (€)", value=10000)
     duree = st.number_input("Durée du prêt (ans)", value=20)
     taux = st.number_input("Taux d'intérêt (%)", value=3.5, step=0.1)
     notaire = st.number_input("Frais de notaire (%)", value=8.5 if mode == "Investissement Locatif" else 2.5)
+
 
 # ==========================================
 # BLOC 4 & 5 : CHARGES & FISCALITÉ (Uniquement Locatif)
