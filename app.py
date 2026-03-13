@@ -237,17 +237,36 @@ with c1:
     if mode == "Investissement Locatif":
         loyer_ia_tot = float(st.session_state.ai_loyer_m2 * surface)
         use_loyer_ia = st.checkbox(f"Appliquer Loyer IA ({loyer_ia_tot}€)", value=(loyer_ia_tot > 0))
-        loyer_final = st.number_input("Loyer mensuel HC (€)", value=loyer_ia_tot if use_loyer_ia else 500.0)
+        # CORRECTION ICI : Ajout de la clé dynamique
+        loyer_final = st.number_input(
+            "Loyer mensuel HC (€)", 
+            value=loyer_ia_tot if use_loyer_ia else 500.0,
+            key=f"loyer_input_{use_loyer_ia}",
+            disabled=use_loyer_ia
+        )
     else:
         revente_ia_tot = float(st.session_state.ai_prix_m2 * surface)
         use_revente_ia = st.checkbox(f"Appliquer Revente IA ({revente_ia_tot}€)", value=(revente_ia_tot > 0))
-        revente_final = st.number_input("Prix de revente estimé (€)", value=revente_ia_tot if use_revente_ia else 160000.0)
+        # CORRECTION ICI : Ajout de la clé dynamique
+        revente_final = st.number_input(
+            "Prix de revente estimé (€)", 
+            value=revente_ia_tot if use_revente_ia else 160000.0,
+            key=f"revente_input_{use_revente_ia}",
+            disabled=use_revente_ia
+        )
 
 with c2:
     st.subheader("Chantier & Prêt")
     trav_ia_tot = float(st.session_state.ai_budget_m2 * surface)
     use_trav_ia = st.checkbox(f"Appliquer Travaux IA ({trav_ia_tot}€)", value=(trav_ia_tot > 0))
-    trav_final = st.number_input("Budget travaux total (€)", value=trav_ia_tot if use_trav_ia else 0.0)
+    
+    # CORRECTION ICI : Ajout de la clé dynamique pour les travaux
+    trav_final = st.number_input(
+        "Budget travaux total (€)", 
+        value=trav_ia_tot if use_trav_ia else 0.0,
+        key=f"trav_input_{use_trav_ia}",
+        disabled=use_trav_ia
+    )
     
     apport = st.number_input("Apport personnel (€)", value=10000)
     duree = st.number_input("Durée du prêt (ans)", value=20)
