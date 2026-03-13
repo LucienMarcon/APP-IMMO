@@ -7,91 +7,90 @@ import requests
 import re
 
 # ==========================================
-# CONFIGURATION ET MÉMOIRE
+# 1. CONFIGURATION ET MÉMOIRE (SESSION STATE)
 # ==========================================
 st.set_page_config(layout="wide", page_title="ImmoInvest Pro", page_icon="🏢")
 
-# Initialisation des variables en mémoire (Session State)
+# Initialisation de la mémoire pour éviter les pertes au rafraîchissement
 if "ai_budget_m2" not in st.session_state: st.session_state.ai_budget_m2 = 0
 if "ai_prix_m2" not in st.session_state: st.session_state.ai_prix_m2 = 0
 if "ai_loyer_m2" not in st.session_state: st.session_state.ai_loyer_m2 = 0
-if "adresse_valide" not in st.session_state: st.session_state.adresse_valide = None
+if "rapport_marche" not in st.session_state: st.session_state.rapport_marche = ""
+if "rapport_travaux" not in st.session_state: st.session_state.rapport_travaux = ""
+if "is_pro_active" not in st.session_state: st.session_state.is_pro_active = False
 
-# CSS pour un look "Lovable App" professionnel
+# CSS Personnalisé pour un look "Lovable"
 st.markdown("""
     <style>
     .main {background-color: #F8FAFC;}
-    .stMetric {background-color: #ffffff; padding: 15px; border-radius: 10px; border: 1px solid #E2E8F0;}
+    .stMetric {background-color: #ffffff; padding: 15px; border-radius: 10px; border: 1px solid #E2E8F0; box-shadow: 0 1px 3px rgba(0,0,0,0.1);}
     div.stButton > button:first-child {
-        background-color: #0F172A; color: white; border-radius: 8px; width: 100%; border: none; height: 3em;
+        background-color: #0F172A; color: white; border-radius: 8px; width: 100%; height: 3.5em; font-weight: 600;
     }
     div.stButton > button:hover {background-color: #334155; border: none;}
-    h1, h2, h3 {color: #1E293B; font-weight: 600;}
+    .stExpander {background-color: white; border-radius: 10px;}
+    h1, h2, h3 {color: #1E293B; font-weight: 700;}
     </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# CONNEXION API GEMINI (LOGIQUE HYBRIDE)
+# 2. GESTION DES CLÉS API ET QUOTAS
 # ==========================================
 st.sidebar.title("🏢 ImmoInvest Pro")
+user_key = st.sidebar.text_input("Votre clé API personnelle (Optionnel) :", type="password")
 
-st.sidebar.subheader("🔑 Paramètres API")
-user_key = st.sidebar.text_input(
-    "Votre clé API personnelle (optionnel) :", 
-    type="password", 
-    help="Collez votre clé Google AI Studio ici pour utiliser votre propre quota."
-)
-
-if user_key:
-    API_KEY = user_key
-    st.sidebar.success("Clé personnelle active")
-elif "GEMINI_API_KEY" in st.secrets:
-    API_KEY = st.secrets["GEMINI_API_KEY"]
-    st.sidebar.info("Clé partagée active")
-else:
-    API_KEY = None
-    st.sidebar.error("Aucune clé API configurée")
+# Choix de la clé : Utilisateur > Secrets Streamlit
+API_KEY = user_key if user_key else st.secrets.get("GEMINI_API_KEY")
 
 if API_KEY:
+    genai.configure(api_key=API_KEY)
+    # Détection automatique du mode PRO ou ÉCO
     try:
-        genai.configure(api_key=API_KEY)
-        model_vision = genai.GenerativeModel('gemini-2.5-flash')
-        model_research = genai.GenerativeModel('gemini-2.5-pro')
-    except Exception as e:
-        st.sidebar.error(f"Erreur config : {e}")
+        tmp_model = genai.GenerativeModel('gemini-2.5-pro')
+        # Test de connexion minimal
+        tmp_model.generate_content("test", generation_config={"max_output_tokens": 1})
+        st.session_state.is_pro_active = True
+        st.sidebar.success("✅ Mode PRO actif (Recherche Web)")
+    except Exception:
+        st.session_state.is_pro_active = False
+        st.sidebar.warning("⚠️ Mode ÉCO (Quota Pro saturé)")
+    
+    model_vision = genai.GenerativeModel('gemini-2.5-flash')
+    model_pro = genai.GenerativeModel('gemini-2.5-pro')
+else:
+    st.sidebar.error("❌ Aucune clé API détectée")
 
 # ==========================================
-# FONCTIONS INTELLIGENTES
+# 3. FONCTIONS UTILES (LOGIQUE & IA)
 # ==========================================
+
+def extraire_nombre(texte, balise):
+    """Extrait proprement un nombre entre balises [BALISE: 123]"""
+    pattern = rf"\[{balise}:\s*(\d+)\]"
+    match = re.search(pattern, texte)
+    return int(match.group(1)) if match else 0
 
 def analyser_travaux_photo(image):
-    prompt = """
-    Agis en tant qu'expert en bâtiment. Analyse cette photo et :
-    1. Détaille les travaux de rénovation visibles.
-    2. Donne une estimation du coût de rénovation au m².
-    FINIS TA RÉPONSE PAR CETTE BALISE : [BUDGET_M2: XXX] (remplace XXX par le chiffre).
-    """
+    prompt = """Tu es maître d'œuvre. Analyse l'état et les matériaux sur cette photo.
+    Détaille les rénovations à prévoir et donne une estimation au m².
+    FINIS PAR CETTE BALISE : [BUDGET_M2: XXX]"""
     response = model_vision.generate_content([prompt, image])
     return response.text
 
 def analyser_marche_local(ville, cp):
-    prompt = f"""
-    Analyse le marché immobilier actuel pour {ville} ({cp}).
-    1. Donne le prix de vente moyen au m² pour l'ancien.
-    2. Donne le loyer moyen mensuel au m² hors charges.
-    3. Fais une brève analyse de la tension locative.
-    FINIS PAR CES BALISES : [PRIX_M2: XXX] [LOYER_M2: YYY]
-    """
+    prompt = f"""Analyse précise du marché immobilier à {ville} ({cp}). 
+    Donne le prix m² moyen de vente et le loyer m² moyen HC.
+    FINIS PAR CES BALISES : [PRIX_M2: XXX] [LOYER_M2: YYY]"""
+    
     try:
-        response = model_research.generate_content(prompt, tools=[{'google_search_retrieval': {}}])
-        return response.text
-    except Exception:
-        try:
-            st.warning("⏱️ Mode éco : Analyse basée sur l'historique de l'IA.")
+        if st.session_state.is_pro_active:
+            # Recherche Web si le quota Pro le permet
+            response = model_pro.generate_content(prompt, tools=[{'google_search_retrieval': {}}])
+        else:
             response = model_vision.generate_content(prompt)
-            return response.text
-        except:
-            return "Service indisponible.\n[PRIX_M2: 2000]\n[LOYER_M2: 12]"
+        return response.text
+    except:
+        return "Erreur de quota. Données indicatives : [PRIX_M2: 2500] [LOYER_M2: 12]"
 
 def calculer_mensualite(capital, taux, annees):
     if capital <= 0 or annees <= 0: return 0.0
@@ -101,118 +100,131 @@ def calculer_mensualite(capital, taux, annees):
     return capital * (tm * (1 + tm)**n) / ((1 + tm)**n - 1)
 
 # ==========================================
-# INTERFACE PRINCIPALE
+# 4. INTERFACE : LOCALISATION & IA
 # ==========================================
 mode = st.sidebar.radio("Stratégie d'investissement :", ["Investissement Locatif", "Marchand de Biens"])
-st.sidebar.markdown("---")
 
-st.header(f"Projet : {mode}")
+st.header("📍 Localisation & Analyse de Marché")
 
-# --- ÉTAPE 1 : LOCALISATION ---
-st.subheader("📍 Localisation & Marché")
-query = st.text_input("Adresse ou Ville :", placeholder="Ex: Châteauroux...")
+# Autocomplétion d'adresse en direct
+addr_query = st.text_input("Commencez à taper une adresse ou une ville...", placeholder="Ex: 15 rue de Rivoli, Paris")
 
-if query:
-    api_url = f"https://api-adresse.data.gouv.fr/search/?q={query}&limit=5"
-    res = requests.get(api_url).json()
-    if res['features']:
-        options = {f["properties"]["label"]: f["properties"] for f in res['features']}
-        selection = st.selectbox("Validez l'emplacement :", options.keys())
-        st.session_state.adresse_valide = options[selection]
+if len(addr_query) > 3:
+    url_ban = f"https://api-adresse.data.gouv.fr/search/?q={addr_query}&limit=5"
+    data_ban = requests.get(url_ban).json()
+    if data_ban['features']:
+        adresses_dict = {f["properties"]["label"]: f["properties"] for f in data_ban['features']}
+        choix = st.selectbox("Sélectionnez l'adresse exacte :", adresses_dict.keys())
         
-        ville = st.session_state.adresse_valide['city']
-        cp = st.session_state.adresse_valide['postcode']
-        st.success(f"Cible : {ville} ({cp})")
+        info = adresses_dict[choix]
+        ville, cp = info['city'], info['postcode']
+        st.success(f"📍 Bien localisé : {ville} ({cp})")
         
-        if st.button("📊 Analyser le marché local"):
-            with st.spinner("Analyse des data sectorielles..."):
-                rapport = analyser_marche_local(ville, cp)
-                p_m2 = re.search(r'\[PRIX_M2:\s*(\d+)\]', rapport)
-                l_m2 = re.search(r'\[LOYER_M2:\s*(\d+)\]', rapport)
-                if p_m2: st.session_state.ai_prix_m2 = int(p_m2.group(1))
-                if l_m2: st.session_state.ai_loyer_m2 = int(l_m2.group(1))
-                st.markdown("### Rapport IA")
-                st.write(re.sub(r'\[.*?\]', '', rapport))
-                st.rerun() # On force le rafraîchissement pour mettre à jour les calculs en bas
+        if st.button("📊 Lancer l'analyse du marché local"):
+            with st.spinner(f"L'IA étudie les données immobilières de {ville}..."):
+                st.session_state.rapport_marche = analyser_marche_local(ville, cp)
+                st.session_state.ai_prix_m2 = extraire_nombre(st.session_state.rapport_marche, "PRIX_M2")
+                st.session_state.ai_loyer_m2 = extraire_nombre(st.session_state.rapport_marche, "LOYER_M2")
+                st.rerun()
+
+if st.session_state.rapport_marche:
+    with st.expander("📄 Voir l'analyse détaillée du quartier", expanded=True):
+        st.write(re.sub(r'\[.*?\]', '', st.session_state.rapport_marche))
 
 st.markdown("---")
 
-# --- ÉTAPE 2 : TRAVAUX ---
-st.subheader("📸 Expertise Travaux")
-up = st.file_uploader("Photo du bien :", type=["jpg","png","jpeg"])
+# ==========================================
+# 5. INTERFACE : AUDIT PHOTO
+# ==========================================
+st.header("📸 Expertise Travaux par Vision")
+photo = st.file_uploader("Importez une photo de l'annonce :", type=["jpg", "jpeg", "png"])
 
-if up:
-    img = Image.open(up)
-    col_i, col_t = st.columns([1, 2])
-    col_i.image(img, use_container_width=True)
-    if col_t.button("✨ Estimer le chantier"):
-        with st.spinner("Scan visuel..."):
-            audit = analyser_travaux_photo(img)
-            b_m2 = re.search(r'\[BUDGET_M2:\s*(\d+)\]', audit)
-            if b_m2: st.session_state.ai_budget_m2 = int(b_m2.group(1))
-            col_t.write(re.sub(r'\[.*?\]', '', audit))
+if photo:
+    img = Image.open(photo)
+    col_img, col_btn = st.columns([1, 2])
+    col_img.image(img, use_container_width=True)
+    
+    if col_btn.button("✨ Estimer le montant des travaux"):
+        with st.spinner("Analyse visuelle des finitions..."):
+            st.session_state.rapport_travaux = analyser_travaux_photo(img)
+            st.session_state.ai_budget_m2 = extraire_nombre(st.session_state.rapport_travaux, "BUDGET_M2")
             st.rerun()
 
+if st.session_state.rapport_travaux:
+    with st.expander("🔨 Détails des travaux estimés", expanded=True):
+        st.info(re.sub(r'\[.*?\]', '', st.session_state.rapport_travaux))
+
 st.markdown("---")
 
-# --- ÉTAPE 3 : FINANCES ---
-st.subheader("💰 Simulation Financière")
-col_a, col_b = st.columns(2)
+# ==========================================
+# 6. CALCULATEUR FINANCIER COMPLET
+# ==========================================
+st.header(f"💰 Simulation Financière : {mode}")
 
-with col_a:
-    surface = st.number_input("Surface (m²)", value=50, key="surf_input")
-    prix_bien = st.number_input("Prix net vendeur (€)", value=100000)
+c1, c2 = st.columns(2)
+
+with c1:
+    st.subheader("Acquisition")
+    surface = st.number_input("Surface du bien (m²)", value=50, step=1)
+    prix_achat = st.number_input("Prix d'achat net vendeur (€)", value=100000, step=1000)
     
     if mode == "Investissement Locatif":
-        # Logique Loyer
-        loyer_ia_total = float(st.session_state.ai_loyer_m2 * surface)
-        use_loyer_ia = st.checkbox("Appliquer Loyer IA", value=(loyer_ia_total > 0), key="check_loyer")
-        
-        default_loyer = loyer_ia_total if use_loyer_ia else 500.0
-        loyer_f = st.number_input("Loyer mensuel HC (€)", value=default_loyer, step=10.0)
+        # Logique Loyer IA
+        loyer_ia_tot = float(st.session_state.ai_loyer_m2 * surface)
+        use_loyer_ia = st.checkbox(f"Appliquer Loyer IA ({loyer_ia_tot}€)", value=(loyer_ia_tot > 0))
+        loyer_final = st.number_input("Loyer mensuel HC (€)", value=loyer_ia_tot if use_loyer_ia else 500.0)
     else:
-        # Logique Revente (Marchand)
-        rev_ia_total = float(st.session_state.ai_prix_m2 * surface)
-        use_rev_ia = st.checkbox("Appliquer Revente IA", value=(rev_ia_total > 0), key="check_rev")
-        
-        default_rev = rev_ia_total if use_rev_ia else 150000.0
-        rev_f = st.number_input("Prix de revente (€)", value=default_rev, step=1000.0)
+        # Logique Revente IA
+        revente_ia_tot = float(st.session_state.ai_prix_m2 * surface)
+        use_revente_ia = st.checkbox(f"Appliquer Revente IA ({revente_ia_tot}€)", value=(revente_ia_tot > 0))
+        revente_final = st.number_input("Prix de revente estimé (€)", value=revente_ia_tot if use_revente_ia else 160000.0)
 
-with col_b:
-    # Logique Travaux
-    trav_ia_total = float(st.session_state.ai_budget_m2 * surface)
-    use_trav_ia = st.checkbox("Appliquer Travaux IA", value=(trav_ia_total > 0), key="check_trav")
+with c2:
+    st.subheader("Chantier & Prêt")
+    # Logique Travaux IA
+    trav_ia_tot = float(st.session_state.ai_budget_m2 * surface)
+    use_trav_ia = st.checkbox(f"Appliquer Travaux IA ({trav_ia_tot}€)", value=(trav_ia_tot > 0))
+    trav_final = st.number_input("Budget travaux total (€)", value=trav_ia_tot if use_trav_ia else 0.0)
     
-    default_trav = trav_ia_total if use_trav_ia else 0.0
-    trav_f = st.number_input("Budget Travaux (€)", value=default_trav, step=500.0)
-    
-    notaire = st.number_input("Notaire (%)", value=8.5 if mode=="Investissement Locatif" else 2.5)
-    apport = st.number_input("Apport (€)", value=10000)
-    duree = st.number_input("Durée (ans)", value=20)
-    taux = st.number_input("Taux (%)", value=3.5)
+    apport = st.number_input("Apport personnel (€)", value=10000)
+    duree = st.number_input("Durée du prêt (ans)", value=20)
+    taux = st.number_input("Taux d'intérêt (%)", value=3.5, step=0.1)
+    notaire = st.number_input("Frais de notaire (%)", value=8.5 if mode == "Investissement Locatif" else 2.5)
 
-# Calculs globaux
-total_invest = prix_bien + (prix_bien * notaire/100) + trav_f
-mensu = calculer_mensualite(max(0, total_invest - apport), taux, duree)
+# CALCULS DE SYNTHÈSE
+frais_notaire = prix_achat * (notaire / 100)
+total_projet = prix_achat + frais_notaire + trav_final
+capital_emprunte = max(0, total_projet - apport)
+mensualite = calculer_mensualite(capital_emprunte, taux, duree)
 
-st.markdown("### 📊 Synthèse")
-res1, res2, res3 = st.columns(3)
+st.markdown("### 📊 Résultats de l'opération")
+r1, r2, r3 = st.columns(3)
 
 if mode == "Investissement Locatif":
-    renta = ((loyer_f * 12) / total_invest) * 100 if total_invest > 0 else 0
-    cf = loyer_f - mensu - (loyer_f * 0.2)
-    res1.metric("Investissement Total", f"{total_invest:,.0f} €")
-    res2.metric("Rentabilité Brute", f"{renta:.2f} %")
-    res3.metric("Cash-Flow (est.)", f"{cf:,.0f} €/m")
+    renta_brute = ((loyer_final * 12) / total_projet) * 100 if total_projet > 0 else 0
+    cash_flow = loyer_final - mensualite - (loyer_final * 0.2) # Estimation 20% charges/taxes
+    r1.metric("Investissement Total", f"{total_projet:,.0f} €")
+    r2.metric("Rentabilité Brute", f"{renta_brute:.2f} %")
+    r3.metric("Cash-Flow Net (est.)", f"{cash_flow:,.0f} € / mois")
 else:
-    marge = rev_f - total_invest
-    roi = (marge / total_invest) * 100 if total_invest > 0 else 0
-    res1.metric("Prix de Revient", f"{total_invest:,.0f} €")
-    res2.metric("Marge Brute", f"{marge:,.0f} €")
-    res3.metric("ROI", f"{roi:.1f} %")
+    marge = revente_final - total_projet
+    roi = (marge / total_projet) * 100 if total_projet > 0 else 0
+    r1.metric("Prix de Revient", f"{total_projet:,.0f} €")
+    r2.metric("Marge Brute", f"{marge:,.0f} €")
+    r3.metric("ROI", f"{roi:.1f} %")
+
+# Graphique de répartition
+fig = px.pie(
+    names=['Prix Achat', 'Travaux', 'Notaire'], 
+    values=[prix_achat, trav_final, frais_notaire],
+    title="Répartition du capital",
+    hole=0.4,
+    color_discrete_sequence=['#0F172A', '#334155', '#94A3B8']
+)
+st.plotly_chart(fig, use_container_width=True)
 
 # Diagnostic discret
-with st.expander("Diagnostic Technique"):
-    st.write(f"Mémoire IA - Travaux: {st.session_state.ai_budget_m2}€/m²")
-    st.write(f"Mémoire IA - Prix Marché: {st.session_state.ai_prix_m2}€/m²")
-    st.write(f"Mémoire IA - Loyer Marché: {st.session_state.ai_loyer_m2}€/m²")
+with st.expander("🛠️ Diagnostic Technique (Debug)"):
+    st.write(f"Mémoire Loyer : {st.session_state.ai_loyer_m2}€/m2")
+    st.write(f"Mémoire Prix : {st.session_state.ai_prix_m2}€/m2")
+    st.write(f"Mémoire Travaux : {st.session_state.ai_budget_m2}€/m2")
