@@ -12,7 +12,7 @@ else:
     API_KEY = "AIzaSyBWSlYPySBaUiQ9h6quYFXbEiDLBJwiuBQ" # À remplacer pour vos tests locaux
 
 genai.configure(api_key=API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(layout="wide", page_title="Immo Invest Pro", page_icon="🏢")
