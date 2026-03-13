@@ -4,30 +4,35 @@ import plotly.graph_objects as go
 import google.generativeai as genai
 from PIL import Image
 
-# --- CONFIGURATION DE L'IA (VERSION FORCÉE) ---
+# --- CONFIGURATION DE L'IA ---
 if "GEMINI_API_KEY" in st.secrets:
-    API_KEY = st.secrets["GEMINI_API_KEY"] # Laissez le texte "GEMINI_API_KEY" écrit tel quel !
+    API_KEY = st.secrets["GEMINI_API_KEY"]
 else:
-    API_KEY = "CLÉ_NON_TROUVÉE"
+    API_KEY = "CLE_NON_TROUVEE"
 
 genai.configure(api_key=API_KEY)
 
-# Tentative avec le modèle le plus compatible
+# Bloc de sélection automatique du modèle
 try:
-    # On essaie le nom standard
+    # On essaie d'abord le flash qui est le plus rapide et gratuit
     model = genai.GenerativeModel('gemini-1.5-flash')
-except:
-    # Si ça échoue, on tente l'ancien nom qui est parfois le seul reconnu sur les vieux serveurs
-    model = genai.GenerativeModel('gemini-pro-vision')
-
-# Ce bloc va nous dire ce que votre clé "voit" réellement
-with st.expander("🛠️ Diagnostic Technique (Si erreur)"):
-    st.write("Modèles disponibles pour votre clé :")
+    # Petit test pour vérifier s'il répond
+    st.sidebar.success("IA connectée (Flash)")
+except Exception:
     try:
-        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        st.write(models)
+        # Si échec, on tente le Pro (plus lent mais parfois plus accessible)
+        model = genai.GenerativeModel('gemini-1.5-pro')
+        st.sidebar.warning("IA connectée (Pro)")
     except Exception as e:
-        st.write(f"Impossible de lister les modèles : {e}")
+        st.sidebar.error(f"Erreur de connexion IA : {e}")
+
+# Le diagnostic reste utile pour nous aider
+with st.expander("🛠️ Diagnostic Technique"):
+    try:
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        st.write("Modèles accessibles avec votre clé :", available_models)
+    except Exception as e:
+        st.write(f"Erreur diagnostic : {e}")
 
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(layout="wide", page_title="Immo Invest Pro", page_icon="🏢")
