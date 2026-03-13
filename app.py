@@ -4,15 +4,30 @@ import plotly.graph_objects as go
 import google.generativeai as genai
 from PIL import Image
 
-# --- CONFIGURATION DE L'IA (GEMINI) ---
-# Sur Streamlit Cloud, on utilisera st.secrets pour la sécurité
+# --- CONFIGURATION DE L'IA (VERSION FORCÉE) ---
 if "GEMINI_API_KEY" in st.secrets:
-    API_KEY = st.secrets["GEMINI_API_KEY"]
+    API_KEY = st.secrets["AIzaSyBWSlYPySBaUiQ9h6quYFXbEiDLBJwiuBQ"]
 else:
-    API_KEY = "AIzaSyBWSlYPySBaUiQ9h6quYFXbEiDLBJwiuBQ" # À remplacer pour vos tests locaux
+    API_KEY = "VOTRE_CLE_API_ICI"
 
 genai.configure(api_key=API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+
+# Tentative avec le modèle le plus compatible
+try:
+    # On essaie le nom standard
+    model = genai.GenerativeModel('gemini-1.5-flash')
+except:
+    # Si ça échoue, on tente l'ancien nom qui est parfois le seul reconnu sur les vieux serveurs
+    model = genai.GenerativeModel('gemini-pro-vision')
+
+# Ce bloc va nous dire ce que votre clé "voit" réellement
+with st.expander("🛠️ Diagnostic Technique (Si erreur)"):
+    st.write("Modèles disponibles pour votre clé :")
+    try:
+        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        st.write(models)
+    except Exception as e:
+        st.write(f"Impossible de lister les modèles : {e}")
 
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(layout="wide", page_title="Immo Invest Pro", page_icon="🏢")
