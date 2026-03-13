@@ -14,15 +14,14 @@ genai.configure(api_key=API_KEY)
 
 # Bloc de sélection automatique du modèle
 try:
-    # On essaie d'abord le flash qui est le plus rapide et gratuit
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    # Petit test pour vérifier s'il répond
-    st.sidebar.success("IA connectée (Flash)")
+    # On utilise la nouvelle génération présente sur votre clé !
+    model = genai.GenerativeModel('gemini-2.5-flash')
+    st.sidebar.success("IA connectée (Gemini 2.5 Flash)")
 except Exception:
     try:
-        # Si échec, on tente le Pro (plus lent mais parfois plus accessible)
-        model = genai.GenerativeModel('gemini-1.5-pro')
-        st.sidebar.warning("IA connectée (Pro)")
+        # Solution de secours avec un autre modèle de votre liste
+        model = genai.GenerativeModel('gemini-flash-latest')
+        st.sidebar.warning("IA connectée (Flash Latest)")
     except Exception as e:
         st.sidebar.error(f"Erreur de connexion IA : {e}")
 
