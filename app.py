@@ -3,215 +3,227 @@ import plotly.express as px
 import plotly.graph_objects as go
 import google.generativeai as genai
 from PIL import Image
+import requests
 import re
 
-# --- INITIALISATION DE LA MÉMOIRE (SESSION STATE) ---
-if "ai_budget_m2" not in st.session_state:
-    st.session_state.ai_budget_m2 = 0
+# ==========================================
+# CONFIGURATION ET MÉMOIRE
+# ==========================================
+st.set_page_config(layout="wide", page_title="ImmoInvest Pro", page_icon="🏢")
 
-# --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(layout="wide", page_title="ImmoInvest Pro", page_icon="🏢", initial_sidebar_state="expanded")
+# Initialisation des variables en mémoire
+if "ai_budget_m2" not in st.session_state: st.session_state.ai_budget_m2 = 0
+if "ai_prix_m2" not in st.session_state: st.session_state.ai_prix_m2 = 0
+if "ai_loyer_m2" not in st.session_state: st.session_state.ai_loyer_m2 = 0
+if "adresse_valide" not in st.session_state: st.session_state.adresse_valide = None
 
-# --- STYLE CSS PERSONNALISÉ (Pour un look "Lovable" et épuré) ---
+# CSS pour un look "Lovable App" professionnel
 st.markdown("""
     <style>
-    .main {background-color: #FAFAFA;}
-    h1, h2, h3 {color: #1E293B; font-weight: 600;}
-    .stButton>button {background-color: #0F172A; color: white; border-radius: 6px; padding: 0.5rem 1rem;}
-    .stButton>button:hover {background-color: #334155; color: white;}
-    .block-container {padding-top: 2rem;}
+    .main {background-color: #F8FAFC;}
+    .stMetric {background-color: #ffffff; padding: 15px; border-radius: 10px; border: 1px solid #E2E8F0;}
+    div.stButton > button:first-child {
+        background-color: #0F172A; color: white; border-radius: 8px; width: 100%; border: none; height: 3em;
+    }
+    div.stButton > button:hover {background-color: #334155; border: none;}
+    .reportview-container .main .block-container {padding-top: 2rem;}
+    h1, h2, h3 {color: #1E293B;}
     </style>
 """, unsafe_allow_html=True)
 
-# --- CONFIGURATION DE L'API ---
+# ==========================================
+# CONNEXION API GEMINI
+# ==========================================
 if "GEMINI_API_KEY" in st.secrets:
     API_KEY = st.secrets["GEMINI_API_KEY"]
 else:
     API_KEY = "CLE_NON_TROUVEE"
 
 genai.configure(api_key=API_KEY)
-model = genai.GenerativeModel('gemini-2.5-flash')
 
-# --- FONCTIONS ---
+# Utilisation des modèles de dernière génération identifiés dans votre diagnostic
+model_vision = genai.GenerativeModel('gemini-2.5-flash')
+model_research = genai.GenerativeModel('gemini-2.5-pro')
+
+# ==========================================
+# FONCTIONS INTELLIGENTES
+# ==========================================
+
 def analyser_travaux_photo(image):
     prompt = """
-    Tu es un expert en rénovation immobilière. Analyse cette photo avec un ton professionnel et neutre.
-    1. Détaille l'état actuel (sols, murs, équipements visibles).
-    2. Liste les travaux nécessaires pour une remise à neuf qualitative.
-    3. À la toute fin de ta réponse, tu DOIS inclure une estimation du coût des travaux au mètre carré en utilisant EXACTEMENT ce format : [BUDGET_M2: 500] (remplace 500 par ton estimation haute en euros).
+    Agis en tant qu'expert en bâtiment. Analyse cette photo et :
+    1. Détaille les travaux de rénovation visibles.
+    2. Donne une estimation du coût de rénovation au m².
+    FINIS TA RÉPONSE PAR CETTE BALISE : [BUDGET_M2: XXX] (remplace XXX par le chiffre).
     """
-    response = model.generate_content([prompt, image])
+    response = model_vision.generate_content([prompt, image])
     return response.text
 
-def calculer_mensualite(montant_emprunte, taux_annuel, annees):
-    if montant_emprunte <= 0 or annees <= 0: return 0.0
-    taux_mensuel = (taux_annuel / 100) / 12
-    nombre_mois = annees * 12
-    if taux_mensuel == 0: return montant_emprunte / nombre_mois
-    return montant_emprunte * (taux_mensuel * (1 + taux_mensuel)**nombre_mois) / ((1 + taux_mensuel)**nombre_mois - 1)
+def analyser_marche_local(ville, cp):
+    prompt = f"""
+    Analyse le marché immobilier actuel pour {ville} ({cp}).
+    1. Donne le prix de vente moyen au m² pour l'ancien.
+    2. Donne le loyer moyen mensuel au m² hors charges.
+    3. Fais une brève analyse de la tension locative.
+    FINIS PAR CES BALISES : [PRIX_M2: XXX] [LOYER_M2: YYY]
+    """
+    # Utilisation de la recherche Google intégrée pour des données fraîches
+    response = model_research.generate_content(prompt, tools=[{'google_search_retrieval': {}}])
+    return response.text
 
-# --- BARRE LATÉRALE ---
-st.sidebar.markdown("## ImmoInvest Pro")
-st.sidebar.markdown("Plateforme d'analyse de rentabilité")
-mode = st.sidebar.radio("Type de projet :", ["Investissement Locatif", "Marchand de Biens (Achat/Revente)"])
+def calculer_mensualite(capital, taux, annees):
+    if capital <= 0 or annees <= 0: return 0.0
+    tm = (taux / 100) / 12
+    n = annees * 12
+    if tm == 0: return capital / n
+    return capital * (tm * (1 + tm)**n) / ((1 + tm)**n - 1)
 
-with st.sidebar.expander("Paramètres techniques"):
-    st.write("Statut API : Connectée")
-    st.write("Modèle : Vision 2.5")
+# ==========================================
+# BARRE LATÉRALE ET NAVIGATION
+# ==========================================
+st.sidebar.title("🏢 ImmoInvest Pro")
+mode = st.sidebar.radio("Stratégie d'investissement :", ["Investissement Locatif", "Marchand de Biens"])
+st.sidebar.markdown("---")
+with st.sidebar.expander("Diagnostic Système"):
+    st.write("API Gemini: Connectée")
+    st.write("Modèles: 2.5 Flash & Pro")
 
-# --- CORPS DE L'APPLICATION ---
-st.title(mode)
+# ==========================================
+# ÉTAPE 1 : LOCALISATION (API ÉTAT)
+# ==========================================
+st.header("📍 Localisation & Marché")
+query = st.text_input("Rechercher une adresse ou une ville :", placeholder="Ex: 10 rue de la Paix, Châteauroux...")
+
+if query:
+    api_url = f"https://api-adresse.data.gouv.fr/search/?q={query}&limit=5"
+    res = requests.get(api_url).json()
+    if res['features']:
+        options = {f["properties"]["label"]: f["properties"] for f in res['features']}
+        selection = st.selectbox("Confirmez l'emplacement :", options.keys())
+        st.session_state.adresse_valide = options[selection]
+        
+        ville = st.session_state.adresse_valide['city']
+        cp = st.session_state.adresse_valide['postcode']
+        st.success(f"Bien situé à {ville} ({cp})")
+        
+        if st.button("🔍 Analyser les prix du quartier avec l'IA"):
+            with st.spinner("Recherche des données de marché en cours..."):
+                rapport = analyser_marche_local(ville, cp)
+                
+                # Extraction des données
+                p_m2 = re.search(r'\[PRIX_M2:\s*(\d+)\]', rapport)
+                l_m2 = re.search(r'\[LOYER_M2:\s*(\d+)\]', rapport)
+                
+                if p_m2: st.session_state.ai_prix_m2 = int(p_m2.group(1))
+                if l_m2: st.session_state.ai_loyer_m2 = int(l_m2.group(1))
+                
+                st.markdown("### Rapport de Marché")
+                st.write(re.sub(r'\[.*?\]', '', rapport)) # Affiche le texte sans les balises
+    else:
+        st.error("Adresse introuvable.")
+
 st.markdown("---")
 
 # ==========================================
-# MODULE : ANALYSE VISUELLE
+# ÉTAPE 2 : AUDIT TRAVAUX (VISION)
 # ==========================================
-st.subheader("1. Analyse de l'existant")
-uploaded_file = st.file_uploader("Importez une photographie de l'annonce pour estimer l'enveloppe de travaux", type=["jpg", "jpeg", "png"])
+st.header("📸 Expertise Travaux")
+up = st.file_uploader("Importez une photo du bien pour estimer le chantier :", type=["jpg","png","jpeg"])
 
-if uploaded_file is not None:
-    image = Image.open(uploaded_file)
-    col_img, col_txt = st.columns([1, 2])
+if up:
+    img = Image.open(up)
+    col_i, col_t = st.columns([1, 2])
+    col_i.image(img, use_container_width=True)
     
-    with col_img:
-        st.image(image, use_container_width=True)
-    
-    with col_txt:
-        if st.button("Générer l'audit visuel"):
-            with st.spinner("Analyse de la structure et des finitions en cours..."):
-                try:
-                    resultat = analyser_travaux_photo(image)
-                    
-                    # Extraction du budget via Regex
-                    match = re.search(r'\[BUDGET_M2:\s*(\d+)\]', resultat)
-                    if match:
-                        st.session_state.ai_budget_m2 = int(match.group(1))
-                        # Nettoyer le texte pour ne pas afficher la balise technique à l'utilisateur
-                        resultat_propre = re.sub(r'\[BUDGET_M2:\s*\d+\]', '', resultat)
-                    else:
-                        st.session_state.ai_budget_m2 = 0
-                        resultat_propre = resultat
-                        
-                    st.markdown("### Rapport d'expertise")
-                    st.write(resultat_propre.strip())
-                    
-                except Exception as e:
-                    st.error("L'analyse a échoué. Veuillez réessayer.")
+    if col_t.button("✨ Lancer l'expertise visuelle"):
+        with st.spinner("Analyse des matériaux et de l'état général..."):
+            audit = analyser_travaux_photo(img)
+            b_m2 = re.search(r'\[BUDGET_M2:\s*(\d+)\]', audit)
+            if b_m2: st.session_state.ai_budget_m2 = int(b_m2.group(1))
+            col_t.markdown("### Rapport Travaux")
+            col_t.write(re.sub(r'\[.*?\]', '', audit))
 
 st.markdown("---")
 
 # ==========================================
-# MODULE : MODÉLISATION FINANCIÈRE
+# ÉTAPE 3 : MODÉLISATION FINANCIÈRE
 # ==========================================
-st.subheader("2. Modélisation financière")
+st.header(f"💰 Simulation : {mode}")
+
+col_a, col_b = st.columns(2)
+
+with col_a:
+    st.subheader("Données de base")
+    surface = st.number_input("Surface totale (m²)", value=50, min_value=1)
+    prix_bien = st.number_input("Prix d'acquisition (€)", value=100000)
+    
+    # Intégration intelligente du prix de revente / loyer
+    if mode == "Investissement Locatif":
+        loyer_estime = st.session_state.ai_loyer_m2 * surface
+        if loyer_estime > 0:
+            st.info(f"L'IA suggère un loyer de {loyer_estime}€ ({st.session_state.ai_loyer_m2}€/m²)")
+            opt_loyer = st.checkbox("Utiliser l'estimation de loyer IA")
+            val_loyer = float(loyer_estime) if opt_loyer else 500.0
+        else:
+            val_loyer = 500.0
+        loyer_final = st.number_input("Loyer mensuel HC (€)", value=val_loyer)
+    else:
+        revente_estime = st.session_state.ai_prix_m2 * surface
+        if revente_estime > 0:
+            st.info(f"L'IA suggère une revente à {revente_estime}€ ({st.session_state.ai_prix_m2}€/m²)")
+            opt_rev = st.checkbox("Utiliser l'estimation de revente IA")
+            val_rev = float(revente_estime) if opt_rev else 150000.0
+        else:
+            val_rev = 150000.0
+        revente_final = st.number_input("Prix de revente estimé (€)", value=val_rev)
+
+with col_b:
+    st.subheader("Travaux & Frais")
+    # Intégration intelligente du budget travaux
+    travaux_estime = st.session_state.ai_budget_m2 * surface
+    if travaux_estime > 0:
+        st.info(f"L'IA estime les travaux à {travaux_estime}€ ({st.session_state.ai_budget_m2}€/m²)")
+        opt_trav = st.checkbox("Appliquer l'enveloppe travaux IA")
+        val_trav = float(travaux_estime) if opt_trav else 0.0
+    else:
+        val_trav = 0.0
+    
+    travaux_final = st.number_input("Budget travaux global (€)", value=val_trav)
+    notaire = st.number_input("Frais de notaire (%)", value=8.5 if mode=="Investissement Locatif" else 2.5)
+    apport = st.number_input("Apport personnel (€)", value=10000)
+    duree = st.number_input("Durée crédit (ans)", value=20)
+    taux = st.number_input("Taux d'intérêt (%)", value=3.5)
+
+# CALCULS FINAUX
+frais_notaire = prix_bien * (notaire / 100)
+investissement_total = prix_bien + frais_notaire + travaux_final
+montant_emprunt = max(0, investissement_total - apport)
+mensualite = calculer_mensualite(montant_emprunt, taux, duree)
+
+st.markdown("### 📊 Résultats")
+k1, k2, k3 = st.columns(3)
 
 if mode == "Investissement Locatif":
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("**Acquisition & Rendement**")
-        prix_affiche = st.number_input("Prix affiché (€)", value=100000, step=5000)
-        surface = st.number_input("Surface (m²)", value=40, step=1)
-        loyer_mensuel = st.number_input("Loyer hors charges espéré (€/mois)", value=600, step=50)
-        charges_annuelles = st.number_input("Charges de copropriété (annuel)", value=800, step=50)
-        taxe_fonciere = st.number_input("Taxe foncière", value=600, step=50)
-        
-    with col2:
-        st.markdown("**Travaux & Financement**")
-        
-        # Logique de connexion intelligente du budget
-        budget_suggere = st.session_state.ai_budget_m2 * surface
-        if budget_suggere > 0:
-            st.info(f"💡 Audit : Un coût de {st.session_state.ai_budget_m2} €/m² a été identifié.")
-            utiliser_ia = st.checkbox("Intégrer automatiquement cette estimation", value=False)
-        else:
-            utiliser_ia = False
-            
-        if utiliser_ia:
-            budget_travaux = st.number_input("Budget travaux (€)", value=float(budget_suggere), disabled=True)
-        else:
-            budget_travaux = st.number_input("Budget travaux (€)", value=0.0, step=1000.0)
-
-        taux_notaire = st.number_input("Frais d'acquisition (%)", value=8.5, step=0.1)
-        apport = st.number_input("Apport personnel (€)", value=0, step=1000)
-        taux_emprunt = st.number_input("Taux d'emprunt (%)", value=3.5, step=0.1)
-        duree = st.number_input("Durée (années)", value=20, step=1)
-
-    # Calculs Locatif
-    frais_notaire = prix_affiche * (taux_notaire / 100)
-    prix_total = prix_affiche + frais_notaire + budget_travaux
-    montant_emprunte = max(0, prix_total - apport)
-    mensualite = calculer_mensualite(montant_emprunte, taux_emprunt, duree)
-    loyer_annuel = loyer_mensuel * 12
-    
-    renta_brute = (loyer_annuel / prix_total) * 100 if prix_total > 0 else 0
-    renta_nette = ((loyer_annuel - charges_annuelles - taxe_fonciere) / prix_total) * 100 if prix_total > 0 else 0
-    cash_flow = loyer_mensuel - mensualite - (charges_annuelles/12) - (taxe_fonciere/12)
-
-    # Affichage des KPIs
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.subheader("3. Viabilité du projet")
-    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-    kpi1.metric("Investissement Total", f"{prix_total:,.0f} €".replace(",", " "))
-    kpi2.metric("Rentabilité Brute", f"{renta_brute:.1f} %")
-    kpi3.metric("Rentabilité Nette", f"{renta_nette:.1f} %")
-    kpi4.metric("Cash-flow mensuel", f"{cash_flow:,.0f} €".replace(",", " "))
-
-# ==========================================
-# MODE MARCHAND DE BIENS
-# ==========================================
+    renta_brute = ((loyer_final * 12) / investissement_total) * 100 if investissement_total > 0 else 0
+    cash_flow = loyer_final - mensualite - (loyer_final * 0.2) # Estimation 20% charges/taxes
+    k1.metric("Investissement Total", f"{investissement_total:,.0f} €")
+    k2.metric("Rentabilité Brute", f"{renta_brute:.2f} %")
+    k3.metric("Cash-Flow (est.)", f"{cash_flow:,.0f} € / mois")
 else:
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("**Acquisition**")
-        prix_achat = st.number_input("Prix d'achat négocié (€)", value=150000, step=5000)
-        surface = st.number_input("Surface (m²)", value=60, step=1)
-        taux_notaire_mdb = st.number_input("Frais d'acquisition (%)", value=8.5, step=0.1, help="En MDB, les frais peuvent être réduits à ~2.5%")
-        
-    with col2:
-        st.markdown("**Travaux & Revente**")
-        
-        # Logique de connexion intelligente du budget
-        budget_suggere = st.session_state.ai_budget_m2 * surface
-        if budget_suggere > 0:
-            st.info(f"💡 Audit : Un coût de {st.session_state.ai_budget_m2} €/m² a été identifié.")
-            utiliser_ia = st.checkbox("Intégrer automatiquement cette estimation", value=False)
-        else:
-            utiliser_ia = False
-            
-        if utiliser_ia:
-            budget_travaux = st.number_input("Budget travaux global (€)", value=float(budget_suggere), disabled=True)
-        else:
-            budget_travaux = st.number_input("Budget travaux global (€)", value=20000.0, step=1000.0)
+    marge = revente_final - investissement_total
+    roi = (marge / investissement_total) * 100 if investissement_total > 0 else 0
+    k1.metric("Prix de Revient", f"{investissement_total:,.0f} €")
+    k2.metric("Marge Brute", f"{marge:,.0f} €")
+    k3.metric("Rentabilité (ROI)", f"{roi:.1f} %")
 
-        frais_divers = st.number_input("Frais annexes (géomètre, etc.) (€)", value=2500, step=500)
-        prix_revente = st.number_input("Prix de revente total estimé (€)", value=230000, step=5000)
+# Graphique de répartition
+labels = ['Achat', 'Travaux', 'Notaire']
+values = [prix_bien, travaux_final, frais_notaire]
+fig = px.pie(names=labels, values=values, title="Répartition du capital engagé", hole=0.4)
+st.plotly_chart(fig, use_container_width=True)
 
-    # Calculs MDB
-    frais_notaire = prix_achat * (taux_notaire_mdb / 100)
-    prt = prix_achat + frais_notaire + budget_travaux + frais_divers
-    marge_brute = prix_revente - prt
-    roi = (marge_brute / prt) * 100 if prt > 0 else 0
-
-    # Affichage des KPIs
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.subheader("3. Viabilité de l'opération")
-    kpi1, kpi2, kpi3 = st.columns(3)
-    kpi1.metric("Prix de Revient (PRT)", f"{prt:,.0f} €".replace(",", " "))
-    kpi2.metric("Marge Brute", f"{marge_brute:,.0f} €".replace(",", " "))
-    kpi3.metric("Retour sur Investissement", f"{roi:.1f} %")
-
-    # Graphique MDB (Design épuré)
-    fig = go.Figure(go.Waterfall(
-        name="Flux", orientation="v",
-        measure=["relative", "relative", "relative", "relative", "total"],
-        x=["Achat", "Notaire", "Travaux & Frais", "Marge", "Revente"],
-        y=[prix_achat, frais_notaire, budget_travaux + frais_divers, marge_brute, prix_revente],
-        connector={"line": {"color": "#CBD5E1"}},
-        decreasing={"marker": {"color": "#EF4444"}},
-        increasing={"marker": {"color": "#0F172A"}},
-        totals={"marker": {"color": "#10B981"}}
-    ))
-    fig.update_layout(title="Décomposition de la création de valeur", template="plotly_white", margin=dict(t=50, b=20, l=20, r=20))
-    st.plotly_chart(fig, use_container_width=True)
+# Diagnostic discret en bas
+with st.expander("Diagnostic Technique"):
+    st.write(f"Mémoire IA - Travaux: {st.session_state.ai_budget_m2}€/m²")
+    st.write(f"Mémoire IA - Prix: {st.session_state.ai_prix_m2}€/m²")
+    st.write(f"Mémoire IA - Loyer: {st.session_state.ai_loyer_m2}€/m²")
